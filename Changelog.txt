@@ -1,0 +1,49 @@
+
+Changelog for pycerberus
+========================
+
+0.4.2 (05.05.2011)
+- More fixes for source distribution because of missing files in tar.gz
+
+0.4.1 (16.04.2011)
+- Fix source distribution (distribution_helpers.py were not included)
+
+0.4 (13.04.2011)
+- pycerberus now supports Python 3!
+- Fix installation/egg generation without babel
+- Added a schema which can parse positional parameters from a string into a 
+  dict before processing the data like a normal schema would do
+
+0.3.3 (04.07.2010)
+- Fix installation issue: pycerberus is actually not zip-safe
+
+0.3.2 (05.06.2010)
+- Fix egg file generation: Include all necessary packages in eggs
+- added babel support to setup.py
+- updated pot file and completed German translation
+- fix exception if translations for preferred locale are not available (fall 
+  back to english messages)
+
+0.3.1 (07.04.2010)
+- Fixed bug due to duplicated message in DomainNameValidator/EmailAddressValidator
+- Validator can now strip inputs (False by default)
+- StringValidator now also treats '' as empty value (as well as None)
+
+0.3 (27.03.2010)
+- Python 2.3 compatibility
+- Schema can raise error if unknown items are processed
+- Basic domain name validator
+- Basic email address validator
+
+0.2 (16.03.2010)
+- You now can declare custom messages as a class-level dict
+- Added interface to retrieve error details from InvalidDataErrors
+- Added validation schemas to validate a set of values (typically a web form).
+  Schemas can also inherit from other schemas to avoid code duplication.
+- Validators try to make thread-safety violations obvious
+- Nicer API to retrieve error details from an InvalidDataError
+
+0.1 (30.01.2010)
+ - initial release
+
+

@@ -1,0 +1,638 @@
+
+pycerberus documentation
+************************
+
+pycerberus is a framework to check user data thoroughly so that you can protect
+your application from malicious (or just garbled) input data.
+
+* **Remove stupid code which converts input values:** After values are validated, you 
+  can work with real Python types instead of strings - e.g. 42 instead of '42', 
+  convert database IDs to model objects transparently.
+* **Implement custom validation rules:** Writing custom validators is 
+  straightforward, everything is well documented and pycerberus only uses very 
+  little Python magic.
+* **Focus on your value-adding application code:** Save time by implementing every 
+  input validation rule only once, but 100% right instead of implementing a 
+  dozen different half-baked solutions.
+* **Ready for global business:** i18n support (based on GNU gettext) is built in, 
+  adding custom translations is easy.
+* **Tune it for your needs:** You can implement custom behavior in your validators,
+  e.g. fetch translations from a database instead of using gettext or define
+  custom translations for built-in validators.
+* **Use it wherever you like:** pycerberus is used in a SMTP server, trac 
+  macros as well as web applications - there are no dependencies on a specific 
+  context like web development.
+
+.. highlight:: python
+
+
+Installation and Setup
+==================================
+
+pycerberus is just a Python library which uses setuptools so it does not require
+a special setup. It has no dependencies besides the standard Python library. 
+There are some optional packages which you can choose to install:
+
+* **Babel** is the most convenient option to generate the gettext catalog files 
+  so you can see localized error messages.
+* I'm using **nosetests** ("nose") to run all the automated tests.
+
+pycerberus has been tested on **Python 2.3-2.7** as well as **Python 3**. To know
+more about Python 3 support (and its limitations), please read the section 
+:ref:`Python 3 Support<python3>`.
+
+
+Background
+==================================
+
+In every software you must check carefully that untrusted user input data 
+matches your expectations. Unvalidated user input is a common source of security
+flaws. However many checks are repetitive and validation logic tends to be 
+scattered all around the code. Because basic checks are duplicated, developers 
+forget to check also for uncommon edge cases. Eventually there is often also 
+some code to convert the input data (usually strings) to more convenient Python 
+data types like int or bool.
+
+pycerberus is a framework that tackles these common problems and allows
+you to write tailored validators to perform additional checks. Furthermore the 
+framework also has built-in support for less common (but important) use cases
+like internationalization.
+
+The framework itself is heavily inspired by `FormEncode <http://www.formencode.org>`_
+by Ian Bicking. Therefore most of `FormEncode's design rationale <http://www.formencode.org/Design.html>`_
+is directly applicable to pycerberus. However several things about FormEncode 
+annoyed me so much that I decided to write my own library when I needed one for 
+my SMTP server project `pymta <http://www.schwarz.eu/opensource/projects/pymta>`_.
+
+
+Philosophy and Design
+==================================
+
+Rules are declared explicitly: Separating policy from mechanism
+---------------------------------------------------------------
+
+pycerberus separates validation rules ("Validators") from the objects they 
+validate against. It might be tempting to derive the validation rules from 
+restrictions you specified earlier (e.g. from a class which is mapped by an ORM
+to a database). However that approach completely ignores that validation 
+typically depends on context: In an API you have typically a lot more freedom in
+regard to allowed values compared to a public web interface where input needs to
+conform to a lot more checks. In a system where you declare the validation 
+explicitly, this is possible. Also it is quite easy writing some code that 
+generates a bottom line of validation rules automatically based on your ORM 
+model and add additional restrictions depending on the context.
+
+As pycerberus is completely context-agnostic (not being bundled with a specific
+framework), you can use it in many different places (e.g. web applications with
+different frameworks, server applications, check parameters in a library, …).
+
+
+Further reading: `FormEncode's design rationale <http://www.formencode.org/Design.html>`_ - 
+most of the design ideas are also present in pycerberus.
+
+
+
+Development Status
+==================================
+
+Currently (March 2010, version 0.3) pycerberus is at a very basic stage - 
+though with very solid foundations. The API for single validators is basically
+complete, i18n support is built in and there is decent documentation covering
+all important aspects. You can check multiple values (e.g. a web form) easily
+using a validation Schema ("compound validator").
+
+The future development will focus on *repeating fields* (list of values). After 
+that, I'll try to increase the number of *built-in validators for
+specific domains* (e.g. *correct* email address validation, validating host names,
+localized numbers). Another interesting topic will be *integration into different
+frameworks* like `TurboGears <http://www.turbogears.org>`_ and 
+`trac <http://trac.edgewall.org>`_.
+
+However I have to say that I'm pretty satisfied with the current status so 
+adding more features to pycerberus won't be my #1 priority in the next months.
+The current API and functionality was well-suited even when 
+`validating input parameters of a SMTP server <http://www.schwarz.eu/opensource/projects/pymta>`_
+so I think most use cases should be actually covered.
+
+
+
+Using Validators
+==================================
+
+In pycerberus "Validators" are used to specify validation rules which ensure
+that the input matches your expectations. Every basic validator validates a 
+just single value (e.g. one specific input field in a web application). When 
+the validation was successful, the validated and converted value is returned. 
+If something is wrong with the data, an exception is raised::
+
+    from pycerberus.validators import IntegerValidator
+    IntegerValidator().process('42') # returns 42 as int
+
+pycerberus puts conversion and validation together in one call because of two
+main reasons:
+
+* As a user you need to convert input data (usually strings) anyway into a more
+  sensible format (e.g. int). These lines of code are redundant because you 
+  declared in the validator already what the value should be.
+* During the validation process, it is very easy to do also the conversion. In
+  fact many validations are done just by trying to do a conversion and catch
+  all exceptions that were raised during that process.
+
+
+
+Validation Errors
+----------------------------------
+
+Every validation error will trigger an exception, usually an ``InvalidDataError``.
+This exception will contain a translated error message which can be presented to
+the user, a key so you can identify the exact error programmatically and the 
+original, unmodified value::
+
+    from pycerberus.errors import InvalidDataError
+    from pycerberus.validators import IntegerValidator
+    try:
+        IntegerValidator().process('foo')
+    except InvalidDataError, e:
+        details = e.details()
+        details.msg()         # u'Please enter a number.'
+        details.key()         # 'invalid_number'
+        details.value()       # 'foo'
+        details.context()     # {}
+
+
+Configuring Validators
+----------------------------------
+
+You can configure the behavior of the validator when instantiating it. For 
+example, if you pass ``required=False`` to the constructor, most validators will
+also accept ``None`` as a valid value::
+
+        IntegerValidator(required=True).process(None)  # -> validation error
+        IntegerValidator(required=False).process(None) # None
+
+Validators support different configuration options which are explained along the
+validator description.
+
+
+Context
+----------------------------------
+
+All validators support an optional ``context`` argument (which defaults to an
+emtpy dict). It is used to plug validators into your application and make
+them aware of the overall system state: For example a validator must know which
+locale it should use to translate an error message to the correct language 
+without relying on some global variables::
+
+    context = {'locale': 'de'}
+    validator = IntegerValidator()
+    validator.process('foo', context=context) # u'Bitte geben Sie eine Zahl ein.'
+
+The context variable is especially useful when writing custom validators - 
+locale is the only context information that pycerberus itself cares about.
+
+
+Available validators
+==================================
+
+pycerberus contains some basic validators already. You can use them as they are
+or use them as a basis for more specialized validators.
+
+.. toctree::
+    :maxdepth: 2
+    
+    validators/index
+
+
+Writing your own validators
+==================================
+
+After all, using only built-in validators won't help you much: You'll need 
+custom validation rules which means that you need to write your own validators.
+
+pycerberus comes with two classes that can serve as a good base when you start
+writing a custom validator: The ``BaseValidator`` only provides the absolutely
+required set of API so you have maximum freedom. The ``Validator`` class itself
+is inherited from the ``BaseValidator`` and defines a more sophisticated API 
+and i18n support. Usually you should use the ``Validator`` class.
+
+
+BaseValidator
+----------------------------------
+
+.. autoclass:: pycerberus.api.BaseValidator
+   :members:
+
+
+Validator
+----------------------------------
+
+.. autoclass:: pycerberus.api.Validator
+   :members:
+   :exclude-members: keys, message_for_key
+
+
+Miscellaneous
+----------------------------------
+
+pycerberus uses `simple_super <http://www.häcker.net/trac/browser/open-source/python-simple-super/trunk/simple_super.py>`_
+so you can just say 'self.super()' in your custom validator classes. This will
+call the super implementation with just the same parameters as your method was
+called.
+
+Validators need to be thread-safe as one instance might be used several times.
+Therefore you must not add additional attributes to your validator instance
+after you called Validator's constructor. To prevent unexperienced programmers
+falling in that trap, a ''Validator'' will raise an exception if you try to set
+an attribute. If you don't like this behavior, you can set 
+'_is_internal_state_frozen' to False before calling Validator's constructor.
+
+
+Putting all together - A simple validator
+-----------------------------------------
+
+Now it's time to put it all together. This validator demonstrates most of the 
+API as explained so far:
+
+.. literalinclude:: ./unicode_validator.py
+    :pyobject: UnicodeValidator
+
+The validator will convert all input to unicode strings (using the UTF-8 
+encoding). It also checks for a maximum length of the string.
+
+You can see that all the conversion is done in ``convert()`` while additional
+validation is encapsulated in ``validate()``. This can help you keeping your
+methods small.
+
+In case there is an error the ``error()`` method will raise an ``InvalidDataError``.
+You select the error message to show by passing a string constant ``key`` which
+identifies the message. The key can be used later to adapt the user interface
+without relying the message itself (e.g. show an additional help box in the user
+interface if the user typed in the wrong password). 
+
+The error messages are declared in the ``messages()``. You'll notice that the 
+message strings can also contain variable parts. You can use these variable
+parts to give the user some additional hints about what was wrong with the data.
+
+
+Internationalization
+==================================
+
+Modern applications must be able to handle different languages. 
+Internationalization (i18n) in pycerberus refers to validating 
+locale-dependent input data (e.g. different decimal separator characters) as 
+well as validation errors in different languages. The former aspect is not yet
+covered by default but you should be able to write custom validators easily. 
+
+All messages from validators included in pycerberus can be translated in 
+different languages using the standard gettext library. The language of 
+validation error messages will be chosen depending on the locale which is given 
+in the state dictionary,
+
+i18n support in pycerberus is a bit broader than just translating 
+existing error messages. i18n becomes interesting when you write your own 
+validators (based on the ones that come with pycerberus) and your translations
+need to play along with the built-in ones:
+
+* Translate only the messages you defined, keep the existing pycerberus translations.
+* If you don't like the existing pycerberus translations, you can define your 
+  own without even changing a single line or file in pycerberus.
+* Specify additional translation options per validator class (e.g. a different
+  gettext domain or a different directory where your translations are stored).
+* Even though pycerberus uses the well-known gettext mechanism to retrieve
+  translations, you can use any other source as well (e.g. a database or a XML 
+  file).
+
+All i18n support in pycerberus aims to provide custom validators with a
+nice, simple-to-use API while maintaining the flexibility that serious 
+applications need.
+
+
+Get translated error messages
+------------------------------
+
+If you want to get translated error messages from a validator, you set the 
+correct ''context''. formencode looks for a key named 'locale' in the context
+dictionary::
+
+    validator = IntegerValidator()
+    validator.process('foo', context={'locale': 'en'}) # u'Please enter a number.'
+    validator.process('foo', context={'locale': 'de'}) # u'Bitte geben Sie eine Zahl ein.'
+
+
+Internal gettext details
+------------------------------
+
+Usually you don't have to know much about how pycerberus uses gettext internally.
+Just for completeness: The default domain is 'pycerberus'. By default 
+translations (.mo files) are loaded from ``pycerberus.locales``, with a fall back
+to the system-wide locale dir ''/usr/share/locale''.
+
+
+Translate your custom messages
+------------------------------
+
+To translate messages from a custom validator, you need to declare them in
+the messages() method and mark the message strings as translatable::
+
+    from pycerberus.api import Validator
+    from pycerberus.i18n import _
+    
+    class MyValidator(Validator):
+        def messages(self):
+            return {
+                    'foo': _('A message.'),
+                    'bar': _('Another message.'),
+                   }
+        
+        # your validation logic ...
+
+Afterwards you just have to start the usual gettext process. I always use `Babel <http://babel.edgewall.org>`_ because it provides the very convenient ``pybabel`` tool which simplifies the workflow a lot:
+
+* Collect the translatable strings in a po template (.pot) file, e.g. ``pybabel extract . --output=mymessages.pot``
+* Create the initial po file for your new locale (only needed once): ``pybabel init --domain=pycerberus --input-file=mymessages.pot --locale=<locale ID> --output-dir=locales/``
+* After every change to a translatable string in your source code, you need to recreate the pot file (see first step) and update the po file for your locale: ``pybabel update --domain=pycerberus --input-file=mymessages.pot --output-dir=locales/``
+* Translate the messages for every locale.
+* Compile the final po file into a mo file, e.g. ``pybabel compile --domain=pycerberus --directory=locales/``
+
+
+Override existing messages and translations
+------------------------------------------------------------
+
+Assume your custom validator is a subclass of a built-in validator but you 
+don't like the built-in translation. Of course you can replace pycerberus' mo
+files directly. However there is also another way where you don't have to change
+pycerberus itself::
+
+    class CustomValidatorThatOverridesTranslations(Validator):
+        
+        def messages(self):
+            return {'empty': _('My custom message if the value is empty'),
+                    'custom': _('A custom message')}
+        
+        # ...
+
+This validator will use a different message for the 'empty' error and you can
+define custom translations for this key in your own .po files.
+
+
+
+Modify gettext options (locale dir, domain)
+------------------------------------------------------------
+
+The gettext framework is configurable, e.g. in which directory your .mo files
+are located and which domain (.mo filename) should be used. In pycerberus this
+is configurable by validator::
+
+    class ValidatorWithCustomGettextOptions(Validator):
+        
+        def messages(self):
+            return {'custom': _('A custom message')}
+        
+        def translation_parameters(self, context):
+            return {'domain': 'myapp', 'localedir': '/home/foo/locale'}
+        
+        # ...
+
+These translation parameters are passed directly to the ''gettext'' call so you
+can read about the available options in the `gettext documentation <http://docs.python.org/library/gettext.html>`_.
+Your parameter will be applied for all messages which were declared in your 
+validator class (but not in others). So you can modify the parameters for your
+own validator but keep all the existing parameters (and translations) for 
+built-in validators.
+
+
+Retrieve translations from a different source (e.g. database)
+-------------------------------------------------------------
+
+Sometimes you don't want to use gettext. For instance you could store translations
+in a relational database so that your users can update the messages themselves
+without fiddling with gettext tools::
+
+    class ValidatorWithNonGettextTranslation(FrameworkValidator):
+        
+        def messages(self):
+            return {'custom': _('A custom message')}
+        
+        def translate_message(self, key, native_message, translation_parameters, context):
+            # fetch the translation for 'native_message' from somewhere
+            translated_message = get_translation_from_db(native_message)
+            return translated_message
+
+You can use this mechanism to plug in arbitrary translation systems into 
+gettext. Your translation mechanism is (again) only applied to keys which were
+defined by your specific validator class. If you want to use your translation
+system also for keys which were defined by built-in validators, you need to
+re-define these keys in your class as shown in the previous section.
+
+
+Using Validation Schemas
+==================================
+
+Especially in web development you often get multiple values from a form and you
+want to validate all these values easily. This is where "compound validators" /
+"schemas" come into play. A schema contains multiple validators, one validator 
+for every field. There's nothing special about these validators - they are just
+validators like the ones I explained in the previous section. Every field 
+validator only cares about a single value and does not see the rest of the 
+values.
+
+You can define a schema like this::
+
+    from pycerberus.schema import SchemaValidator
+    from pycerberus.validators import IntegerValidator, StringValidator
+    
+    schema = SchemaValidator()
+    schema.add('id', IntegerValidator())
+    schema.add('name', StringValidator())
+
+Afterwards the schema behaves most like all basic validators - instead of a
+single input value they just get a dictionary::
+
+    validated_values = schema.process({'id': '42', 'name': 'Foo Bar'})
+
+If you declared a validator for a key which is not present in the input dict, 
+the validator will get its 'empty' value instead::
+
+    id_required = SchemaValidator()
+    id_required.add('id', IntegerValidator(required=False))
+    id_required.process({}) # -> {'id': None}
+    
+    id_optional = SchemaValidator()
+    id_optional.add('id', IntegerValidator(required=True))
+    id_optional.process({}) # raises an Exception because id None is not acceptable
+
+Do not mix up the 'default' value with the 'empty' value::
+
+    IntegerValidator(default=42)
+
+The 'default' value in this case is 42 but the 'empty' value is still None.
+
+
+Please note that Schemas are 'secure by default' which means that the returned
+dictionary contains only values that were validated. If you did not add a 
+validator for a specific key, this key won't be included in the result.
+
+If you need to ensure that no values with unknown keys are passed to the schema
+(even if those would be just dropped), you can call the method 
+''set_allow_additional_parameters(False)''. After that the schema will raise an 
+exception if it finds any unknown keys.
+
+
+Declarative Schemas
+-----------------------------------
+
+Schemas can be an important part in your application security. Also they define
+some kind of interface (which parameters does your application expect). Besides
+the algorithmic way to build a schema there is a 'declarative' way so that you
+can review and audit your schemas easily::
+
+    class MySchema(SchemaValidator):
+        id   = IntegerValidator()
+        name = StringValidator()
+    
+    # using it...
+    schema = MySchema()
+
+It's absolutely the same schema but the definition is way easier to read.
+
+
+Schema Error Handling
+-----------------------------------
+
+All schema validators are executed even if one of the previous validators failed.
+Because of that you can display the user all errors at once::
+
+    schema = SchemaValidator()
+    schema.add('id', IntegerValidator())
+    schema.add('name', StringValidator())
+    try:
+        schema.process({'id': 'invalid', 'name': None})
+    except InvalidDataError, e:
+        e.error_dict()    # {'id': <id validation error>, 'name': <id validation error>}
+        e.error_for('id') # id validation error
+
+
+Validating multiple fields in a Schema
+--------------------------------------
+
+Sometimes you need to validate multiple fields in a schema - e.g. you need to
+check in a 'change password' action that the password is entered the same twice.
+Or you need to check that a certain value is higher than another value in the 
+form. That's where *formvalidators* come into play.
+
+formvalidators are validators like all other field validators but they get the
+complete field dict as input, not a single item. Also formvalidators are run
+*after* all field validators successfully validated the input - therefore you
+have access to reasonably sane values, already converted to a handy Python data
+type. Opposite to simple field validators, the validation process fails 
+immediately if one formvalidator fails.
+
+You can add formvalidators to a form like this::
+
+    class NumbersMatch(Validator):
+        def validate(self, fields, context):
+            if fields['a'] != fields['b' ]:
+                self.error('no_match', fields, context=context)
+    schema.add_formvalidator(NumbersMatch)
+
+Of course there is also a declarative way to use form validators::
+
+    class MySchema(SchemaValidator):
+        # ...
+        formvalidators = (NumbersMatch, )
+
+
+Schema inheritance - build multi-page forms without duplication
+---------------------------------------------------------------
+
+Validation schemas are an important piece of information: On the one hand they
+can serve as a kind of API specification (which parameters are accepted by your 
+application) and on the other hand they are important for security audits (which
+constraints are put on your input values). Obviously this is something that you
+want to get right - duplicating this information only increases the likelyhood 
+of bugs.
+
+The issue becomes especially annoying when you have a web application with a
+complex form (e.g. a new user registration process) that you want to split in
+multiple steps on different pages so that your users won't drop out immediately
+when they see the huge form. It is good HTTP/ReST design practice to keep state 
+on the client side. Therefore you pass fields from previous pages in hidden 
+input fields to the next and for the final page it looks like there was one big 
+form. This also has the advantage that you can shuffle the fields on the 
+different pages without changing real logic.
+
+With that approach your pretty much settled - however you need a separate 
+validation schema for every single page which is a huge duplication. With 
+pycerberus you can avoid that by using ''schema inheritance''::
+
+    class FirstPage(SchemaValidator):
+        id = IntegerValidator()
+        
+        formvalidators = (SomeValidator(), )
+    
+    class SecondPage(FirstPage):
+        # this schema contains also 'id' validator
+        name = StringValidator()
+        
+        # formvalidators are implicitely appended so actually this schema has
+        # these formvalidators: (SomeValidator(), AnotherValidator(), )
+        formvalidators = (AnotherValidator(), )
+    
+    class FinalPage(SecondPage):
+        # this schema contains also 'id' and 'name' validators
+        age = IntegerValidator()
+        
+        # This page contains again both formvalidators
+
+As you can see, every page adds some validators while keeping the old ones. This
+eliminates the duplication problem described above,
+
+What happens if SecondPage declares a different validator for 'id'? In this case
+it will just replace the ''IntegerValidator()'' declared by ''FirstPage''!
+
+
+.. _python3:
+
+Support for Python 3
+==============================
+
+.. include:: ../README.python3.txt
+
+
+Parse Input with Schemas
+------------------------
+
+In the common "web form" use case you already get parameters mapped to keys. 
+That's usually the job of your web framework. However sometimes it's not that 
+easy: Before you can do input validation, you need to parse the user input from
+a string and convert that into a dict.
+
+This is where ''PositionalArgumentsParsingSchema()'' might help you: This schema
+takes a string and extracts several parameters from it. So you can use it to
+transform ``"foo, 42"`` into ``dict(name="foo", value=42)``.
+
+.. autoclass:: pycerberus.schemas.PositionalArgumentsParsingSchema
+   :members:
+
+This schema is used for example in `pymta <http://www.schwarz.eu/opensource/projects/pymta>`_.
+to parse the SMTP command strings. Also I used it in my 
+`OhlohWidgetsMacro <http://www.schwarz.eu/opensource/projects/ohloh_widgets_macro>`_:
+Trac macros can get parameters but these are passed as a single string so the 
+schema takes care of separating these arguments.
+
+
+Getting Help
+==============================
+
+So far I did not bother setting up a mailing list. If you have questions,
+please send an email to Felix.Schwarz@oss.schwarz.eu. When there are some users
+for pycerberus, I'll create a mailing list.
+
+
+License
+==============================
+
+pycerberus is licensed under the MIT license. As there are no other dependencies
+(besides Python itself), you can easily use pycerberus in proprietary as well
+as GPL applications.
+
