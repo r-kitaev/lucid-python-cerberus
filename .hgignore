@@ -1,9 +1,0 @@
-\.pyc$
-\.mo$
-pyinputvalidation\.egg-info
-build
-\.project
-\.pydevproject
-\.settings
-.*\.egg-info$
-.*\.tar\.gz$
