@@ -14,7 +14,8 @@ Standards-Version: 3.8.4
 
 Package: lucid-python-cerberus
 Architecture: all
-Depends: ${shlibs:Depends}, ${misc:Depends}, python
-Replaces: pycerberus
+Depends: ${shlibs:Depends}, ${misc:Depends}, python,
+ python-pkg-resources
+Replaces: lucid-python-tinydav
 Description: Pycerberus validation library
  Pycerberus python validation library

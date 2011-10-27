@@ -1,5 +1,6 @@
 lucid-python-cerberus (0.4.2) UNRELEASED; urgency=low
 
   * Initial release.
+    Added python-pkg-resources to runtime dependencies
 
  -- Alexander Tsvetkov <sickuenser@gmail.com>  Mon, 05 Sep 2011 18:45:12 +0400
